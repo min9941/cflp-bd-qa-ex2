@@ -1,0 +1,147 @@
+# cflp-bd-qa-ex2 기본 설정
+#
+# 이 파일은 모든 실험의 공통 기본값이다.
+# 개별 실험은 config/experiments/*.yaml 에서 이 값을 덮어쓴다.
+
+project:
+  name: "cflp-bd-qa-ex2"
+  version: "0.1.0"
+
+data_generation:
+  # 좌표: 시설과 고객을 독립적으로 단위 정사각형에서 추출
+  location:
+    distribution: "uniform_unit_square"
+
+  # demand ~ N(mean=35, standard_deviation=5), 즉 N(35, 5^2)
+  # 주의: 5는 분산이 아니라 표준편차이다.
+  demand:
+    distribution: "normal"
+    mean: 35.0
+    standard_deviation: 5.0
+    minimum: 1
+    rounding: "nearest_integer"
+
+  capacity:
+    raw_distribution: "uniform"
+    raw_low: 10.0
+    raw_high: 160.0
+    total_capacity_ratio: 1.5   # S_target = ceil(ratio * D)
+
+  fixed_cost:
+    base_low: 0.0
+    base_high: 90.0
+    slope_low: 100.0
+    slope_high: 110.0
+
+  transport_cost:
+    distance_multiplier: 10.0
+
+benders:
+  relative_gap_tolerance: 1.0e-4
+  max_iterations: 1000
+  global_time_limit: null
+
+  # Dual 후처리는 하지 않는다. raw Gurobi dual을 그대로 사용한다.
+  dual_postprocessing: "none"
+
+  # Dual minimality guard
+  # 닫힌 시설의 v_j 가 optimal face 위에서 팽창하면 cut slack bit 수가
+  # 달라지므로 재현성이 깨진다. 이를 탐지만 하고 자동 수정하지 않는다.
+  dual_minimality_guard:
+    enabled: true
+    tolerance_type: "symmetric_atol_rtol"
+    atol: 1.0e-7
+    rtol: 1.0e-7
+    action_by_trajectory:
+      gurobi_controlled: "stop_run"          # 해당 instance/seed trajectory만 중단
+      sa_end_to_end: "continue_with_raw_dual"
+      qa_end_to_end: "continue_with_raw_dual"
+
+gurobi:
+  time_limit: 600            # 개별 solve 당 제한
+  feasibility_tolerance: 1.0e-6
+  numerical_audit_tolerance: 1.0e-9
+  output_flag: 0
+
+encoding:
+  theta:
+    type: "pure_exponential"
+    bits: 10
+  capacity_slack:
+    type: "pure_exponential"
+    delta: 1
+  cut_slack:
+    type: "pure_exponential"
+    delta_ratio_to_theta: 0.25
+    bits: "auto"
+    # S_k_max 가 음수일 때의 허용 수치 오차
+    negative_tolerance: 1.0e-6
+
+penalty:
+  coefficient_name: "penalty_alpha"
+  margin: 1.1
+  per_constraint: true
+
+sa:
+  num_reads: 1000
+  sweeps: 1000
+  seed: 2024
+
+qa:
+  # ~/.config/dwave/dwave.conf 의 프로필 이름. null 이면 기본 프로필을 쓴다.
+  # **token 은 여기에 넣지 않는다.** 설정 snapshot 이 결과 폴더에 저장되므로
+  # credential 이 새어 나간다. token 은 DWAVE_API_TOKEN 환경변수로만 전달한다.
+  # personal은 개인 계정, lab_account는 LG CNS 계정이다.
+  profile: lab_account
+
+  solvers:
+    pegasus:
+      solver_name: "Advantage_system6"
+      required_topology: "pegasus"
+      required_shape: 16
+    zephyr:
+      solver_name: null
+      required_topology: "zephyr"
+      required_shape: 12
+  num_reads: 1000
+  annealing_time: 20
+  auto_scale: true
+  num_repeats: 1
+  chain_strength:
+    method: "uniform_torque_compensation"
+    prefactor: 1.414
+  chain_break_method: "majority_vote"
+
+embedding:
+  timeout: 300
+  tries: 5
+  seeds: [2024, 2025, 2026, 2027, 2028]
+  ideal_targets:
+    - topology: "pegasus"
+      size: 16
+      label: "ideal_pegasus_p16"
+    - topology: "zephyr"
+      size: 12
+      label: "ideal_zephyr_z12"
+
+validation:
+  # logical variable 수가 이 값 이하일 때만 exhaustive enumeration 수행
+  exhaustive_max_variables: 25
+  # Gurobi MIQP 로 ground state 를 구할 때의 **라이선스** 상한.
+  # 제한(size-limited) 라이선스는 이차항이 있으면 200 변수까지만 허용한다.
+  # 주의: 이것은 라이선스 한계이지 계산 가능 한계가 아니다.
+  miqp_max_variables: 200
+
+  # 실제로 MIQP 를 시도할 변수 수 상한 (계산 가능성 기준).
+  # penalized QUBO 는 계수 dynamic range 가 10^8 수준이라 변수 수가 50을 넘으면
+  # Gurobi 가 time limit 까지 끌려가는 경우가 많다.
+  miqp_tractable_max_variables: 50
+
+  # exact validation 전용 time limit(초). gurobi.time_limit(600) 과 분리한다.
+  # 초과하면 ground state 라고 부르지 않고 TIME_LIMIT 으로 기록한다.
+  exact_time_limit: 60
+  mp_feasibility_tolerance: 1.0e-6
+  borderline_feasibility_tolerance: 1.0e-4
+
+output:
+  formats: ["csv", "parquet"]

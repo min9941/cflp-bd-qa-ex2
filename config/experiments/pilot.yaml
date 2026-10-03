@@ -1,0 +1,30 @@
+# 파일럿 실험 설정
+#
+# base.yaml 을 상속하고 인스턴스 목록만 정의한다.
+
+extends: "../base.yaml"
+
+experiment:
+  name: "pilot"
+  description: "MS-CFLP Benders + QUBO MP 파일럿. iteration 증가에 따른 QUBO/embedding 성장 관측."
+
+instances:
+  - name: "4x12"
+    facilities: 4
+    customers: 12
+    seeds: [100, 101, 102, 103, 104]
+
+  - name: "8x25"
+    facilities: 8
+    customers: 25
+    seeds: [200, 201, 202, 203, 204]
+
+  - name: "16x50"
+    facilities: 16
+    customers: 50
+    seeds: [300, 301, 302, 303, 304]
+
+  - name: "25x50"
+    facilities: 25
+    customers: 50
+    seeds: [400, 401, 402, 403, 404]

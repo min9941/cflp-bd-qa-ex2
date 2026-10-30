@@ -1029,3 +1029,29 @@ termination_status     = OPTIMAL
 
 8. **`minorminer` 실패는 비임베딩성을 증명하지 않으며,
    관측된 한 embedding의 physical qubit 수는 해당 문제의 하한이 아니다.**
+
+## Theta bound 후속 offline 분석
+
+`10_1_theta_bound_gurobi.ipynb`부터 `10_4_theta_bound_zephyr.ipynb`까지 실행한 뒤
+`10_5_theta_bound_compare.ipynb`를 실행한다. 앞 네 노트북은 서로 독립적이다.
+이 분석에서는 SA sampling, QPU 제출, embedding 탐색을 실행하지 않는다.
+S3 bound와 reference 검증을 위한 Gurobi LP/MIP solve는 수행한다.
+
+Snapshot의 `benders_iteration=k`는 원본 iteration CSV에 기록된 **MP 시작 시점**이다.
+Iteration k의 SP에서 생성한 cut은 iteration k+1부터 포함한다. 마지막 embedding
+실패 행과 중복 cut 때문에 cut 수가 늘지 않은 행도 전 구간 결과에 보존한다.
+복원 cut 수가 원본 `num_benders_cuts`와 다르면 분석을 중단한다.
+
+결과는 `results/theta_bound/analysis_v2/<analysis_hash>/`에 저장한다.
+이전 분석 CSV는 그대로 보존하며, 노트북의 기존 출력은 다시 실행해 갱신한다.
+`analysis_hash`는 ratio, reference bits, bit sweep, 대표 snapshot 목록을 구분하고,
+`trajectory_hash`는 실제 사용한 입력 실행 내용을 식별한다.
+입력이 여러 실행으로 섞인 경우 앞 네 노트북의 `SOURCE_CONFIGURATION_HASH`와
+`SOURCE_GRAPH_ID`로 선택한다. 같은 분석 폴더에 여러 입력 버전이 공존하면 비교
+노트북의 `TRAJECTORY_HASHES[(source, instance_id)]`에 선택한 hash를 지정한다.
+최종 요약과 전 구간 분석은 같은 입력 버전만 함께 비교한다.
+
+Bound 위반, 수식/실제 QUBO 불일치, 단조성 위반을 발견하면 해당 폴더에 진단 CSV를
+남기고 정상 결과 저장을 중단한다. Reference를 확보하지 못한 경우는 검증 통과로
+처리하지 않고 별도 상태로 기록한다. 이 offline 분석으로 feasible rate, solution
+gap 또는 embedding time 개선을 주장하지 않는다.

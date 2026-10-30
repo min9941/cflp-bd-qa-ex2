@@ -132,6 +132,9 @@ def build_master_qubo(
     inst: Instance,
     cuts: Sequence[OptimalityCut],
     cfg: dict,
+    theta_lower_bound: float | None = None,
+    theta_upper_bound: float | None = None,
+    theta_bits: int | None = None,
 ) -> MasterQUBO:
     """현재 cut 집합에 대한 MP QUBO 를 만든다.
 
@@ -139,16 +142,26 @@ def build_master_qubo(
         inst: 대상 인스턴스.
         cuts: 활성 optimality cut 목록.
         cfg: 전체 설정 dict.
+        theta_lower_bound: theta 하한. ``None`` 이면 0 (기존 baseline 동작).
+        theta_upper_bound: theta 상한. ``None`` 이면 ``inst.objective_upper_bound``
+            (기존 baseline 동작, bound 전략 S0 와 같다).
+        theta_bits: theta bit 수. ``None`` 이면 설정값을 쓴다.
 
     Returns:
         생성된 :class:`MasterQUBO`.
 
     Raises:
         CutSlackRangeInvalid: cut slack 범위가 허용 오차를 넘어 음수인 경우.
+
+    Note:
+        세 인자를 모두 생략하면 **기존과 완전히 동일한 QUBO** 가 나온다.
+        bound 전략 실험(S1~S3)에서만 값을 넘긴다.
     """
     enc_cfg = cfg["encoding"]
     theta_encoding = build_theta_encoding(
-        inst.objective_upper_bound, int(enc_cfg["theta"]["bits"])
+        inst.objective_upper_bound if theta_upper_bound is None else float(theta_upper_bound),
+        int(enc_cfg["theta"]["bits"]) if theta_bits is None else int(theta_bits),
+        theta_lower_bound=0.0 if theta_lower_bound is None else float(theta_lower_bound),
     )
     capacity_slack = build_capacity_slack_encoding(
         inst.total_capacity, inst.total_demand, float(enc_cfg["capacity_slack"]["delta"])
@@ -196,7 +209,13 @@ def build_master_qubo(
             roles[name] = ROLE_CUT_SLACK
 
     # --- theta affine form ---
+    # theta = theta_L + delta_theta * sum_p 2^p t_p 이므로 **상수항 theta_L 을
+    # 반드시 포함한다.** 빠뜨리면 theta_L > 0 인 bound 전략(S2/S3)에서
+    # cut residual 이 theta_L 만큼 어긋나고, residual 은 제곱되어 penalty 가
+    # 되므로 feasible set 자체가 틀어진다. theta_L = 0 인 baseline 에서는
+    # 상수가 0 이라 기존 QUBO 와 완전히 동일하다.
     theta_form = AffineForm()
+    theta_form.add_constant(theta_encoding.theta_lower_bound)
     for name, coef in zip(theta_names, theta_encoding.encoding.coefficients()):
         theta_form.add(name, coef)
 
@@ -206,6 +225,7 @@ def build_master_qubo(
         objective.add(name, float(inst.fixed_cost[j]))
     for name, coef in theta_form.coefficients.items():
         objective.add(name, coef)
+    objective.add_constant(theta_form.constant)
 
     linear: dict[str, float] = {}
     quadratic: dict[tuple[str, str], float] = {}
@@ -231,6 +251,7 @@ def build_master_qubo(
         residual = AffineForm()
         for name, coef in theta_form.coefficients.items():
             residual.add(name, coef)
+        residual.add_constant(theta_form.constant)  # theta_L
         for j, name in enumerate(y_names):
             residual.add(name, float(cut.y_coefficients[j]))
         residual.add_constant(-float(cut.rhs_constant))

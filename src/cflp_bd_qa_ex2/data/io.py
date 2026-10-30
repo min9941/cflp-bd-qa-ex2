@@ -29,6 +29,19 @@ _REQUIRED_KEYS: tuple[str, ...] = (
 )
 
 
+def _nullable(values: np.ndarray) -> list:
+    """NaN 을 ``None`` 으로 바꿔 JSON 에 ``null`` 로 기록되게 한다.
+
+    ``json.dump`` 는 기본적으로 ``NaN`` 을 그대로 쓰는데, 이는 엄격한 JSON 이
+    아니라 다른 도구에서 읽지 못할 수 있다. 벤치마크 인스턴스는 좌표가 없어
+    ``NaN`` 이 들어가므로 변환이 필요하다.
+    """
+    return [
+        [None if not np.isfinite(v) else float(v) for v in row]
+        for row in np.atleast_2d(values)
+    ]
+
+
 def instance_to_dict(inst: Instance) -> dict[str, Any]:
     """인스턴스를 JSON 직렬화 가능한 dict 로 변환한다."""
     return {
@@ -38,8 +51,8 @@ def instance_to_dict(inst: Instance) -> dict[str, Any]:
         "seed": int(inst.seed),
         "n_facilities": int(inst.n_facilities),
         "n_customers": int(inst.n_customers),
-        "facility_locations": inst.facility_locations.tolist(),
-        "customer_locations": inst.customer_locations.tolist(),
+        "facility_locations": _nullable(inst.facility_locations),
+        "customer_locations": _nullable(inst.customer_locations),
         "demand": inst.demand.astype(int).tolist(),
         "capacity": inst.capacity.astype(int).tolist(),
         "fixed_cost": inst.fixed_cost.tolist(),
@@ -84,7 +97,8 @@ def validate_instance_payload(payload: dict[str, Any]) -> None:
         "transport_cost": (nc, nf),
     }
     for key, expected in shapes.items():
-        actual = np.asarray(payload[key]).shape
+        # 좌표는 NaN(벤치마크) 일 수 있으므로 shape 만 검사한다.
+        actual = np.asarray(payload[key], dtype=float).shape
         if actual != expected:
             raise ValueError(f"인스턴스 schema 위반: {key} shape {actual} != {expected}")
 
@@ -127,3 +141,39 @@ def load_instance(path: str | Path) -> Instance:
 def load_all_instances(in_dir: str | Path) -> list[Instance]:
     """디렉터리의 모든 인스턴스를 instance_id 순으로 읽는다."""
     return [load_instance(p) for p in sorted(Path(in_dir).glob("*.json"))]
+
+
+def load_instances(*dirs: str | Path, required: bool = False) -> list[Instance]:
+    """여러 디렉터리의 인스턴스를 모아 읽는다.
+
+    생성 데이터(`data/raw`)와 벤치마크(`data/benchmark`)를 함께 쓰기 위한 함수이다.
+    존재하지 않는 디렉터리는 조용히 건너뛴다(벤치마크를 아직 변환하지 않았을 수 있다).
+
+    Args:
+        *dirs: 인스턴스 JSON 이 있는 디렉터리들.
+        required: True 면 존재하지 않는 디렉터리에서 예외를 낸다.
+
+    Returns:
+        ``instance_id`` 순으로 정렬된 인스턴스 목록.
+
+    Raises:
+        ValueError: 서로 다른 디렉터리에 같은 ``instance_id`` 가 있는 경우.
+            어느 쪽을 쓸지 임의로 정하지 않는다.
+        FileNotFoundError: ``required=True`` 인데 디렉터리가 없는 경우.
+    """
+    collected: dict[str, tuple[Instance, Path]] = {}
+    for directory in dirs:
+        path = Path(directory)
+        if not path.is_dir():
+            if required:
+                raise FileNotFoundError(f"인스턴스 디렉터리가 없다: {path}")
+            continue
+        for instance in load_all_instances(path):
+            if instance.instance_id in collected:
+                previous = collected[instance.instance_id][1]
+                raise ValueError(
+                    f"중복된 instance_id '{instance.instance_id}': "
+                    f"{previous} 와 {path} 에 모두 있다. 어느 쪽을 쓸지 정해야 한다"
+                )
+            collected[instance.instance_id] = (instance, path)
+    return [item[0] for _, item in sorted(collected.items())]

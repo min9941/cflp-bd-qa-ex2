@@ -15,10 +15,25 @@ from typing import Any, Iterable, Sequence
 from ..data.generator import Instance
 
 # 두 topology notebook 의 **공통 기본값**. 한쪽만 바꾸면 비교가 깨진다.
-DEFAULT_CONTROLLED_SIZES: list[str] | None = ["25x50"]
-DEFAULT_CONTROLLED_SEEDS: list[int] | None = [400]
-DEFAULT_E2E_SIZES: list[str] | None = ["25x50"]
-DEFAULT_E2E_SEEDS: list[int] | None = [400]
+#
+# ``sizes`` 는 ``Instance.name`` 과 비교한다. 두 종류가 있다.
+#
+#   생성 데이터  : "4x12", "8x25", "16x50", "25x50"   seed 는 100/200/300/400 대
+#   OR-Library   : "cap41", "cap42", ...              seed 는 **-1** (seed 개념이 없다)
+#
+# 따라서 벤치마크를 쓸 때 ``seeds`` 에 400 같은 값을 넣으면 **아무것도 선택되지 않는다.**
+# ``seeds=None`` 으로 두거나 ``seeds=[-1]`` 을 쓴다.
+#
+#   예) 생성 25x50 하나      : sizes=["25x50"], seeds=[400]
+#   예) 벤치마크 cap41 하나  : sizes=["cap41"], seeds=None
+#   예) 둘 다                : sizes=["25x50", "cap41"], seeds=None
+DEFAULT_CONTROLLED_SIZES: list[str] | None = ["cap81", "cap82", "cap83", "cap84", "cap91"]
+DEFAULT_CONTROLLED_SEEDS: list[int] | None = None
+DEFAULT_E2E_SIZES: list[str] | None = ["cap81", "cap82", "cap83", "cap84", "cap91"]
+DEFAULT_E2E_SEEDS: list[int] | None = None
+
+BENCHMARK_SEED = -1
+"""벤치마크 인스턴스의 ``seed`` 값. 원본에 seed 개념이 없어 구분용으로 쓴다."""
 
 
 def pick_instances(

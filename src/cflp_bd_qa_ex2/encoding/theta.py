@@ -9,6 +9,8 @@
 
 from __future__ import annotations
 
+import math
+
 from dataclasses import dataclass
 from typing import Any
 
@@ -45,12 +47,51 @@ class ThetaEncoding:
         }
 
 
-def build_theta_encoding(objective_upper_bound: float, theta_bits: int) -> ThetaEncoding:
+def bits_for_target_resolution(
+    theta_lower_bound: float, theta_upper_bound: float, target_delta: float
+) -> int:
+    """목표 해상도 이하를 보장하는 최소 bit 수를 구한다 (E1-B 용).
+
+        b = ceil(log2((theta_U - theta_L) / delta_ref + 1))
+
+    **실제 해상도는 목표값과 같지 않다.** ``ceil`` 때문에
+    ``delta_theta = (theta_U - theta_L) / (2^b - 1) <= target_delta`` 이다.
+    따라서 cut slack 해상도도 목표값이 아니라 실제 ``delta_theta`` 를 따른다.
+
+    Args:
+        theta_lower_bound: theta_L.
+        theta_upper_bound: theta_U.
+        target_delta: 넘지 않아야 할 목표 해상도 delta_ref (양수).
+
+    Returns:
+        필요한 bit 수 (최소 1).
+
+    Raises:
+        EncodingError: 범위가 유효하지 않거나 target_delta 가 0 이하인 경우.
+    """
+    if target_delta <= 0:
+        raise EncodingError("target_delta 는 양수여야 한다")
+    span = float(theta_upper_bound) - float(theta_lower_bound)
+    if span <= 0:
+        raise EncodingError(
+            f"theta 범위가 유효하지 않다: [{theta_lower_bound}, {theta_upper_bound}]"
+        )
+    return max(1, int(math.ceil(math.log2(span / target_delta + 1.0))))
+
+
+def build_theta_encoding(
+    objective_upper_bound: float,
+    theta_bits: int,
+    theta_lower_bound: float = 0.0,
+) -> ThetaEncoding:
     """theta encoding 을 구성한다.
 
     Args:
-        objective_upper_bound: U_obj. theta 의 상한으로 사용한다.
+        objective_upper_bound: theta 의 상한 theta_U.
         theta_bits: 사용할 bit 수 b_theta.
+        theta_lower_bound: theta 의 하한 theta_L. 기본값 0 은 baseline(S0/S1) 이다.
+            S2/S3 처럼 하한을 올리면 delta_theta 가 작아져 **cut slack 해상도도
+            작아지고**, 같은 cut pool 에서 cut slack bit 가 늘거나 유지된다.
 
     Returns:
         구성된 :class:`ThetaEncoding`.
@@ -61,7 +102,7 @@ def build_theta_encoding(objective_upper_bound: float, theta_bits: int) -> Theta
     """
     if theta_bits < 1:
         raise EncodingError("theta_bits 는 1 이상이어야 한다 (THETA_RANGE_INVALID)")
-    theta_lower = 0.0
+    theta_lower = float(theta_lower_bound)
     theta_upper = float(objective_upper_bound)
     if theta_upper <= theta_lower:
         raise EncodingError(
